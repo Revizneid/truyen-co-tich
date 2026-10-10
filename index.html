@@ -105,7 +105,7 @@ main{padding:16px 16px calc(100px + env(safe-area-inset-bottom,0px));min-width:0
 .ls-exit{display:none;margin:0 auto 14px}
 
 /* Illustration */
-.stage{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:24px;border:2px solid rgba(255,248,232,.85);background:#9cc9dd;
+.stage{position:relative;width:100%;aspect-ratio:var(--ar,16/9);max-height:min(72vh,680px);overflow:hidden;border-radius:24px;border:2px solid rgba(255,248,232,.85);background:#9cc9dd;
   box-shadow:var(--shadow);touch-action:pan-y;--x:0;--y:0;isolation:isolate}
 .stage::after{content:"";position:absolute;inset:0;z-index:2;pointer-events:none;border-radius:inherit;
   background:var(--tex),radial-gradient(120% 90% at 18% 0%,rgba(255,236,170,.24),transparent 55%),linear-gradient(180deg,transparent 62%,rgba(16,31,61,.30));
@@ -115,16 +115,12 @@ main{padding:16px 16px calc(100px + env(safe-area-inset-bottom,0px));min-width:0
 .l{position:absolute;inset:-4%;transform:translate3d(calc(var(--x)*var(--k)*-1px),calc(var(--y)*var(--k)*-.6px),0);transition:transform .25s ease-out;will-change:transform}
 .l svg,.l img{width:100%;height:100%;display:block}
 .l img{object-fit:cover}
-
-/* === SỬA ĐỔI: Tự động fit ảnh minh hoạ, không bị tràn khung hay cắt xén === */
-.stage.has-image .l{inset:0;transform:none!important}
-.stage.has-image .l img{
-  object-fit:contain;       /* Đảm bảo hiển thị trọn vẹn ảnh, không cắt mép */
-  object-position:center;    /* Căn giữa ảnh */
-  background:#9cc9dd;       /* Màu nền lấp khoảng trống nếu ảnh không tỷ lệ 16:9 */
-}
-/* === KẾT THÚC SỬA ĐỔI === */
 .b{--k:4}.m{--k:8}.f{--k:13}
+/* Ảnh thật: khung theo tỉ lệ ảnh, ảnh nằm trọn khung (không cắt, không méo); phần dư (nếu có) được lấp bằng chính ảnh làm mờ */
+.stage.photo .l{inset:0;transform:none;transition:none}
+.ph-bg,.ph-fg{position:absolute;display:block}
+.ph-bg{inset:-8%;width:116%;height:116%;object-fit:cover;filter:blur(22px) saturate(1.1)}
+.ph-fg{inset:0;width:100%;height:100%;object-fit:contain}
 .stage.sw .l>*{animation:inN .32s ease-out}
 .stage.sw.back .l>*{animation-name:inP}
 @keyframes inN{from{opacity:0;transform:translateX(14px) scale(1.012)}to{opacity:1;transform:none}}
@@ -641,22 +637,25 @@ st.addEventListener('pointercancel',()=>{sx=null});
 
 /* Chương */
 function art(n){['b','m','f'].forEach((k,j)=>$('l'+k).innerHTML=svg(S[n].a[j],'s'))}
+const PH=src=>[`<img class="ph-bg" alt="" src="${src}">`,`<img class="ph-fg" alt="" src="${src}">`];
+let arSet=0;
+function setAR(im){ /* khung hình theo tỉ lệ ảnh thật (chỉ đặt một lần để các chương không bị nhảy bố cục) */
+  if(arSet||!im.naturalWidth||!im.naturalHeight)return;arSet=1;
+  st.style.setProperty('--ar',Math.max(.9,Math.min(2,im.naturalWidth/im.naturalHeight)).toFixed(4));
+}
 function show(n){
   if(mr)mr.stop();stop();n=Math.max(0,Math.min(S.length-1,n));
   const back=n<i;i=n;
-  art(n);
   const sc=S[n];
-  if(sc.img){ /* ảnh minh hoạ tuỳ chọn: hiện hiệu ứng tải rồi thay tranh vector */
-    st.classList.add('loading');
-    st.classList.add('has-image'); // Báo hiệu đang dùng ảnh thật để CSS áp dụng object-fit: contain
-    const im=new Image();im.alt='';im.decoding='async';
-    im.onload=()=>{if(i!==n)return;$('lb').innerHTML='';$('lf').innerHTML='';$('lm').replaceChildren(im);st.classList.remove('loading')};
-    im.onerror=()=>{if(i===n)st.classList.remove('loading')};
+  if(sc.img){ /* ảnh minh hoạ: hiện hiệu ứng tải, lỗi thì quay về tranh vector */
+    st.classList.add('loading','photo');
+    $('lb').innerHTML=$('lm').innerHTML=$('lf').innerHTML='';
+    const im=new Image();im.decoding='async';
+    im.onload=()=>{if(i!==n)return;setAR(im);const p=PH(sc.img);$('lb').innerHTML=p[0];$('lm').innerHTML=p[1];st.classList.remove('loading')};
+    im.onerror=()=>{if(i!==n)return;st.classList.remove('photo','loading');art(n)};
     im.src=sc.img;
-  }else{
-    st.classList.remove('loading');
-    st.classList.remove('has-image'); // Bỏ class khi về dùng vector (SVG)
-  }
+  }else{st.classList.remove('loading','photo');art(n)}
+  [n-1,n+1].forEach(k=>{if(S[k]&&S[k].img)new Image().src=S[k].img}); /* nạp trước chương kề bên */
   st.classList.remove('sw','back');void st.offsetWidth;st.classList.add('sw');if(back)st.classList.add('back');
   st.setAttribute('aria-label','Tranh minh hoạ chương '+(n+1)+': '+sc.h);
   $('tgt').textContent='Chương '+(n+1);$('sh').textContent=sc.h;$('en').hidden=true;
@@ -880,7 +879,7 @@ function setView(v){
   ui();scrollTo({top:0})
 }
 document.querySelectorAll('.bnav button').forEach(b=>b.onclick=()=>setView(b.dataset.v));
-const coverHTML=t=>S[0].a.map(c=>svg(c,t)).join('');
+const coverHTML=t=>S[0].img?PH(S[0].img).join(''):S[0].a.map(c=>svg(c,t)).join('');
 const heartIc='<svg class="ic" aria-hidden="true"><use href="#i-heart"/></svg>';
 function libCard(t){
   return `<article class="lib-card"><div class="cover" aria-hidden="true">${coverHTML(t)}</div><div class="lib-b"><h2>Sự tích cây khế</h2>
@@ -926,6 +925,7 @@ $('chars').innerHTML=CH.map(c=>`<li class="ch"><div class="av">${c.av}</div><div
 $('chars').addEventListener('click',e=>{const b=e.target.closest('[data-g]');if(b)go(+b.dataset.g)});
 
 /* Khởi động */
+if(S.some(s=>s.img))st.style.setProperty('--ar',(510/494).toFixed(4));
 S.forEach((_,j)=>{const b=document.createElement('button');b.className='d';b.onclick=()=>go(j);$('dots').appendChild(b)});
 if(inFrame||inApp){$('bn').hidden=false;if(/^https?:/.test(location.href))$('bl').innerHTML='<a href="'+location.href+'" target="_blank" rel="noopener">Mở ở tab riêng</a>. '}
 if(window.DeviceOrientationEvent&&DeviceOrientationEvent.requestPermission){$('gy').hidden=false;$('gy').onclick=gyro}else addEventListener('deviceorientation',onO);
